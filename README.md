@@ -31,12 +31,12 @@ import preserve
 
 # Using parameters:
 jam_db1 = preserve.open('shelf', filename="preserve.dbm")
-jam_db1['strawberry'] = {'name': 'Strawbery Jam', 'ingredients': ['strawberry', 'suggar']}
+jam_db1['strawberry'] = {'name': 'Strawbery Jam', 'ingredients': ['strawberry', 'sugar']}
 
 
 # Using URI:
 jam_db2 = preserve.from_uri("mongodb://127.0.0.1:27017/preserves?collection=jam")
-jam_db2['currant'] = {'name': 'Currant Jam', 'ingredients': ['strawberry', 'suggar']}
+jam_db2['currant'] = {'name': 'Currant Jam', 'ingredients': ['currant', 'sugar']}
 
 ```
 
