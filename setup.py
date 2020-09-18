@@ -16,4 +16,5 @@ except VersionConflict:
 
 
 if __name__ == "__main__":
-    setup(use_pyscaffold=True)
+    #setup(use_pyscaffold=True)
+    setup()
