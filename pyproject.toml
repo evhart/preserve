@@ -1,0 +1,118 @@
+[tool.poetry]
+authors = ["Grégoire Burel <evhart@users.noreply.github.com>"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Database",
+  "Topic :: Database :: Database Engines/Servers",
+  "Topic :: Utilities",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.6",
+  "Programming Language :: Python :: 3.7",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: Implementation :: PyPy",
+  "Operating System :: OS Independent",
+]
+description = "A simple key/value store with multiple backends."
+homepage = "https://github.com/evhart/preserve/"
+include = [
+  "README.md",
+  "pyproject.toml",
+  "LICENSE",
+]
+license = "MIT"
+name = "preserve"
+readme = "README.md"
+repository = "https://github.com/evhart/preserve/"
+version = "0.1.1-alpha.0"
+
+[tool.poetry.dependencies]
+halo = "^0.0.30"
+pydantic = "^1.6.1"
+pymongo = "^3.11.0"
+python = "^3.6.1"
+tabulate = "^0.8.7"
+toml = "^0.10.1"
+typer = "^0.3.2"
+
+[tool.poetry.dev-dependencies]
+black = {version = "^20.8b1", allow-prereleases = true}
+darglint = "^1.5.4"
+flake8-docstrings = "^1.5.0"
+flakehell = "^0.6.1"
+isort = {version = "^5.5.3", extras = ["pyproject"]}
+mypy = "^0.782"
+pre-commit = "^2.7.1"
+pydocstyle = "^5.1.1"
+seed-isort-config = "^2.2.0"
+toml = "^0.10.1"
+towncrier = "^19.2.0"
+xdoctest = "^0.15.0"
+
+[tool.poetry.scripts]
+preserve = "preserve.cli:app"
+
+[tool.black]
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+include = '\.pyi?$'
+line-length = 79
+
+[tool.isort]
+combine_as_imports = true
+force_grid_wrap = 0
+include_trailing_comma = true
+known_first_party = 'preserve'
+known_third_party = ["halo", "pkg_resources", "pydantic", "pymongo", "tabulate", "typer"]
+lines_after_imports = 2
+multi_line_output = 3
+
+[tool.flakehell]
+exclude = [".git", "__pycache__", "doc/*", "build", "dist", '.eggs', ".tox"]
+max-complexity = 12
+max_line_length = 79
+#show_source = true
+
+[tool.flakehell.plugins]
+"darglint" = ["+*"]
+"flake8-*" = [
+  "+*",
+  "-W503", # Line break occurred after a binary operator (opposite of W504) 
+  "-D107", # Missing docstring in __init__
+  "-D301", # Use r""" if any backslashes in a docstring  
+  "-D105", # TODO Docstrings
+  "-D102", # TODO Docstrings
+  "-D100", # TODO Docstrings
+  "-D101", # TODO Docstrings
+  "-D103", # TODO Docstrings
+  "-D104", # TODO Docstrings
+]
+
+#[tool.towncrier]
+## Usage: (Source: https://github.com/python-trio/trio/blob/master/pyproject.toml)
+## - PRs should drop a file like "issuenumber.feature" in newsfragments
+##   (or "bugfix", "doc", "removal", "misc")
+## - At release time after bumping version number, run:
+##   poetry run towncrier --draft, then poetry towncrier
+#package = "simplecalc"
+#filename = "doc/changelog.rst"
+#directory = "newsfragments"
+
+[build-system]
+build-backend = "poetry.masonry.api"
+requires = ["poetry>=0.12"]
+
+# Adapted from: https://github.com/adithyabsk/simplecalc

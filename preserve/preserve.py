@@ -1,103 +1,21 @@
-import argparse
-import sys
-import logging
-from abc import ABCMeta, abstractmethod
-
-import collections.abc
-from contextlib import contextmanager
-
-from pydantic import BaseModel
-from typing import List
-
-from preserve import __version__
-
-__author__ = "Grégoire Burel"
-__copyright__ = "Grégoire Burel"
-__license__ = "mit"
-
-_logger = logging.getLogger(__name__)
-
-# TODO Add typing
-class Connector(BaseModel, collections.abc.MutableMapping):
-    """
-    Similar to Shelve code.
-    """
-
-    @staticmethod
-    @abstractmethod
-    def scheme() -> str:
-        raise NotImplementedError()
-
-    @staticmethod
-    @abstractmethod
-    def from_uri(uri: str) -> "Connector":
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __iter__(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __len__(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __contains__(self, key):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def get(self, key, default=None):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __getitem__(self, key):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __setitem__(self, key, value):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __delitem__(self, key):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __enter__(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __exit__(self, type, value, traceback):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def close(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def __del__(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def sync(self):
-        raise NotImplementedError()
-
-    def __setattr__(self, attr, value):
-        if attr in self.__slots__:
-            object.__setattr__(self, attr, value)
-        else:
-            super().__setattr__(attr, value)
-
-
-from .utils import Singleton
 import importlib
+import inspect
+import logging
 import pkgutil
-
-# from preserve import connectors
-
-import preserve.connectors as _connectors
+import sys
+from abc import abstractmethod
+from typing import Dict, List, Type
 
 import pkg_resources
-import inspect
+from pydantic import BaseModel
+
+import preserve.connectors as _connectors
+from preserve.connector import Connector
+
+from .utils import Singleton
+
+
+_logger = logging.getLogger(__name__)
 
 
 def _iter_namespace(ns_pkg):
@@ -112,11 +30,14 @@ class Preserve(object, metaclass=Singleton):
     # import preserve.jars
 
     def __init__(self):
-        self._connectors = {}
+        self._connectors: Dict[str, Type[Connector]] = {}
 
-        # Discover new plugins (see https://packaging.python.org/guides/creating-and-discovering-plugins/):
+        # Discover new plugins
+        # https://packaging.python.org/guides/creating-and-discovering-plugins/:
         # TODO Check if it actually works
-        for entry_point in pkg_resources.iter_entry_points("preserve.connectors"):
+        for entry_point in pkg_resources.iter_entry_points(
+            "preserve.connectors"
+        ):
             print(entry_point.load())
             self._connectors[entry_point.name] = entry_point.load()
 
@@ -140,7 +61,7 @@ class Preserve(object, metaclass=Singleton):
         return self._connectors[format](**kwargs)
 
     def from_uri(self, uri: str) -> Connector:
-        if not ":" in uri:
+        if ":" not in uri:
             raise ValueError(uri)
 
         f = uri.split(":", 1)[0]
@@ -152,13 +73,16 @@ class Preserve(object, metaclass=Singleton):
     def register(self, format: str, connector):
         self._connectors[format] = connector
 
-    def is_registerd(self, format: str, connector) -> bool:
-        if format in self._connectors[format] and self._connectors[format] == connector:
+    def is_registerd(self, format: str, connector: Type[Connector]) -> bool:
+        if (
+            format in self._connectors
+            and self._connectors[format] == connector
+        ):
             return True
         return False
 
-    def connectors(self) -> List[Connector]:
-        return self._connectors.values()
+    def connectors(self) -> List[Type[Connector]]:
+        return list(self._connectors.values())
 
 
 def open(format: str, **kwargs) -> Connector:
@@ -169,5 +93,5 @@ def from_uri(uri: str) -> Connector:
     return Preserve().from_uri(uri)
 
 
-def connectors() -> List[Connector]:
+def connectors() -> List[Type[Connector]]:
     return Preserve().connectors()

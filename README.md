@@ -6,8 +6,12 @@ Preserve is a simple (simplistic) key/value store for storing JSON-like data in 
 
 
 ## ℹ️ Installation and Usage
+Preserve can be installed using pip:
+```
+pip install preserve
+```
 
-Preserve can be installed  from Github directly using the following command:
+Preserve can be also installed from Github directly using the following command:
 ```
 pip install git+https://github.com/evhart/preserve#egg=preserve
 ```

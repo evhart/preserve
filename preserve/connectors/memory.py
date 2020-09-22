@@ -1,11 +1,12 @@
-from preserve.preserve import Connector
+import shelve
+from typing import cast
 from urllib import parse
+
+from preserve.connector import Connector
 
 
 class Memory(Connector):
-    """
-    Memory-based preserve connector.
-    """
+    """Memory-based preserve connector."""
 
     keyencoding: str = "utf-8"
 
@@ -21,7 +22,7 @@ class Memory(Connector):
         if p.scheme != cls.scheme():
             raise ValueError()
 
-        return cls.parse_obj(dict(parse.parse_qsl(p.query)))
+        return cast("Memory", cls.parse_obj(dict(parse.parse_qsl(p.query))))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,8 +74,8 @@ class Memory(Connector):
             # Catch errors that may happen when close is called from __del__
             # because CPython is in interpreter shutdown.
             try:
-                self._dict = _ClosedDict()
-            except:
+                self._dict = shelve._ClosedDict()
+            except ValueError:
                 self._dict = None
 
     def __del__(self):
@@ -82,4 +83,3 @@ class Memory(Connector):
 
     def sync(self):
         pass
-

@@ -1,18 +1,13 @@
-from weakref import WeakValueDictionary
+from typing import Any, Dict, Optional, cast
+from urllib import parse
 
-from bson.objectid import ObjectId
 from pymongo import MongoClient
 
-from typing import Optional
-
-from preserve.preserve import Connector
-from urllib import parse
+from preserve.connector import Connector
 
 
 class Mongo(Connector):
-    """
-    Mongodb backend for preserve.
-    """
+    """Mongodb backend for preserve."""
 
     database: str = "db"
     collection: Optional[str] = None
@@ -22,12 +17,12 @@ class Mongo(Connector):
     __slots__ = ["_client", "_collection"]
 
     @classmethod
-    def from_uri(cls, uri: str) -> "Shelf":
+    def from_uri(cls, uri: str) -> "Mongo":
         p = parse.urlsplit(uri)
         if p.scheme != cls.scheme():
             raise ValueError()
 
-        params = {}
+        params: Dict[str, Any] = {}
         if p.hostname:
             params["host"] = p.hostname
 
@@ -39,8 +34,7 @@ class Mongo(Connector):
 
         params.update(dict(parse.parse_qsl(p.query)))
 
-        print(params)
-        return cls.parse_obj(params)
+        return cast("Mongo", cls.parse_obj(params))
 
     @staticmethod
     def scheme() -> str:
@@ -111,61 +105,3 @@ class Mongo(Connector):
 
     def sync(self):
         pass
-
-
-# class MultiMongo(Connector):
-#     @staticmethod
-#     def scheme() -> str:
-#         return "multi-mongodb"
-
-#     def __init__(self, database: str = "db", host="127.0.0.1", port=27017):
-#         super().__init__()
-#         self.host = host
-#         self.port = port
-#         self.database = database
-
-#         self.client = MongoClient(self.host, self.port)
-#         self._database = self.client[self.database]
-
-#     def __iter__(self):
-#         for collection in self._database.list_collection_names():
-#             yield self[collection]
-
-#     def items(self):
-#         for collection in self._database.list_collection_names():
-#             yield collection, self[collection]
-
-#     def __len__(self):
-#         return sum([len(i) for i in self])
-
-#     def __contains__(self, key):
-#         return key in self._database.list_collection_names()
-
-#     def get(self, key=None, default=None):
-#         return self.__getitem__(key)
-
-#     def __getitem__(self, key=None):
-#         return Mongo(
-#             database=self.database, collection=key, host=self.host, port=self.port
-#         )
-
-#     def __setitem__(self, key, value):
-#         pass
-
-#     def __delitem__(self, key=None):
-#         self[key].drop()
-
-#     def __enter__(self):
-#         return self
-
-#     def __exit__(self, type, value, traceback):
-#         self.close()
-
-#     def close(self):
-#         self.client.close()
-
-#     def __del__(self):
-#         self.close()
-
-#     def sync(self):
-#         pass

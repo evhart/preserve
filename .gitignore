@@ -56,3 +56,4 @@ MANIFEST
 docs/
 test.py
 .coveragerc
+.python-version
