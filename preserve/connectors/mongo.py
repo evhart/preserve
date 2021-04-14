@@ -63,12 +63,7 @@ class Mongo(Connector):
         return self._collection.count_documents({})
 
     def __contains__(self, key):
-        if (
-            self._collection.count_documents(
-                {"_id": key.encode(self.keyencoding)}, limit=1
-            )
-            != 0
-        ):
+        if self._collection.count_documents({"_id": key}, limit=1) != 0:
             return True
         else:
             return False
