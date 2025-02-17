@@ -34,7 +34,7 @@ class Mongo(Connector):
 
         params.update(dict(parse.parse_qsl(p.query)))
 
-        return cast("Mongo", cls.parse_obj(params))
+        return cast("Mongo", cls.model_validate(params))
 
     @staticmethod
     def scheme() -> str:

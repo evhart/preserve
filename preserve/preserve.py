@@ -3,17 +3,14 @@ import inspect
 import logging
 import pkgutil
 import sys
-from abc import abstractmethod
 from typing import Dict, List, Type
 
 import pkg_resources
-from pydantic import BaseModel
 
 import preserve.connectors as _connectors
 from preserve.connector import Connector
 
 from .utils import Singleton
-
 
 _logger = logging.getLogger(__name__)
 
@@ -35,20 +32,16 @@ class Preserve(object, metaclass=Singleton):
         # Discover new plugins
         # https://packaging.python.org/guides/creating-and-discovering-plugins/:
         # TODO Check if it actually works
-        for entry_point in pkg_resources.iter_entry_points(
-            "preserve.connectors"
-        ):
+        for entry_point in pkg_resources.iter_entry_points("preserve.connectors"):
             print(entry_point.load())
             self._connectors[entry_point.name] = entry_point.load()
 
         # Register all the connectors that are defined in the package:
-        for finder, name, ispkg in _iter_namespace(_connectors):
+        for _, name, _ in _iter_namespace(_connectors):
             module = importlib.import_module(name)
             for _, cls in inspect.getmembers(
                 sys.modules[module.__name__],
-                predicate=lambda o: inspect.isclass(o)
-                and issubclass(o, Connector)
-                and o != Connector,
+                predicate=lambda o: inspect.isclass(o) and issubclass(o, Connector) and o != Connector,
             ):
                 self._connectors[cls.scheme()] = cls
 
@@ -74,10 +67,7 @@ class Preserve(object, metaclass=Singleton):
         self._connectors[format] = connector
 
     def is_registerd(self, format: str, connector: Type[Connector]) -> bool:
-        if (
-            format in self._connectors
-            and self._connectors[format] == connector
-        ):
+        if format in self._connectors and self._connectors[format] == connector:
             return True
         return False
 

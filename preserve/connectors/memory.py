@@ -22,7 +22,7 @@ class Memory(Connector):
         if p.scheme != cls.scheme():
             raise ValueError()
 
-        return cast("Memory", cls.parse_obj(dict(parse.parse_qsl(p.query))))
+        return cast("Memory", cls.model_validate(dict(parse.parse_qsl(p.query))))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -1,12 +1,14 @@
 import collections.abc
 from abc import abstractmethod
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # TODO Add typing
 class Connector(BaseModel, collections.abc.MutableMapping):
     """Similar to Shelve code."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     @staticmethod
     @abstractmethod

@@ -40,12 +40,11 @@ class Shelf(Connector):
         p = parse.urlsplit(uri)
         if p.scheme != cls.scheme():
             raise ValueError()
-
         params = {}
-        params["filename"] = p.path
+        params["filename"] = f"{p.netloc}/{p.path}" if p.path != "" else p.netloc  # TODO Fix edge cases.
         params.update(dict(parse.parse_qsl(p.query)))
 
-        return cast("Shelf", cls.parse_obj(params))
+        return cast("Shelf", cls.model_validate(params))
 
     def __iter__(self):
         return self._shelf.__iter__()

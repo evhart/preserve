@@ -6,7 +6,6 @@ from tabulate import tabulate
 
 import preserve
 
-
 app = typer.Typer()
 
 # TODO better implementation of multi
@@ -41,15 +40,11 @@ def export(
         in_preserve_db = preserve.from_uri(input)
         sp.succeed()
 
-    with Halo(
-        text=f"Opening output preserve: {output}.", spinner="dots"
-    ) as sp:
+    with Halo(text=f"Opening output preserve: {output}.", spinner="dots") as sp:
         out_preserve_db = preserve.from_uri(output)
         sp.succeed()
 
-    with typer.progressbar(
-        list(in_preserve_db), label="Exporting data"
-    ) as progress:
+    with typer.progressbar(list(in_preserve_db), label="Exporting data") as progress:
         for idx in progress:
             out_preserve_db[idx] = in_preserve_db[idx]
 
@@ -63,17 +58,17 @@ def connectors(
     #    None, "--connector", "-c", help="The connector to inspect."
     # )
 ):
-
     values = []
     for c in preserve.connectors():
-        sc = c.schema()
+        sc = c.model_json_schema()
         props_values = []
         for n, p in sc["properties"].items():
-            props = [n, f"{p['type'].upper()}"]
-            if "default" in p:
-                props.append(f"[default: {p['default']}]")
+            if "type" in p:
+                props = [n, f"{p['type'].upper()}"]
+                if "default" in p:
+                    props.append(f"[default: {p['default']}]")
 
-            props_values.append(props)
+                props_values.append(props)
 
         values.append(
             [
@@ -95,12 +90,8 @@ def connectors(
 
 @app.command(help="Get header of a given database table.")
 def header(
-    uri: str = typer.Argument(
-        ..., help="The URI specifying how to access the preserve database."
-    ),
-    rows: int = typer.Option(
-        10, "--nb", "-n", help="The number of rows to display."
-    ),
+    uri: str = typer.Argument(..., help="The URI specifying how to access the preserve database."),
+    rows: int = typer.Option(10, "--nb", "-n", help="The number of rows to display."),
 ):
     pp = pprint.PrettyPrinter(width=41, compact=True)
 
@@ -109,13 +100,10 @@ def header(
         preserve_db = preserve.from_uri(uri)
         sp.succeed()
 
+    print(preserve_db)
     if preserve_db:
-
         with Halo(text="Fetching head.", spinner="dots") as sp:
-            values = [
-                [idx, pp.pformat(preserve_db[idx])]
-                for idx in list(preserve_db)[: min(len(preserve_db), rows)]
-            ]
+            values = [[idx, pp.pformat(preserve_db[idx])] for idx in list(preserve_db)[: min(len(preserve_db), rows)]]
             sp.succeed()
 
             typer.echo(
