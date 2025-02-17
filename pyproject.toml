@@ -61,7 +61,7 @@ convention = "google"
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:tool.poetry.version"]
-branch = "main"
+branch = "master"
 upload_to_PyPI = false
 upload_to_release = true
 build_command = "pip install poetry && poetry build"
