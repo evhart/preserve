@@ -4,25 +4,30 @@
 
 Preserve is a simple (simplistic) key/value store for storing JSON-like data in different backends. Its API is based on the standard Python dictionary API.
 
-
 ## ℹ️ Installation and Usage
+
 Preserve can be installed using pip:
+
 ```
 pip install preserve
 ```
 
 Preserve can be also installed from Github directly using the following command:
+
 ```
 pip install git+https://github.com/evhart/preserve#egg=preserve
 ```
 
 ### 📒 Requirements
+
 Preserve needs the following libraries installed and Python 3.6+ (tested on Python 3.8):
 * [halo](https://github.com/manrajgrover/halo)
 * [pydantic](https://pydantic-docs.helpmanual.io/)
-* [pymongo](https://pymongo.readthedocs.io/)
 * [tabulate](https://github.com/astanin/python-tabulate)
 * [typer](https://typer.tiangolo.com/)
+
+Optioanal dependencies for specific backends:
+* [pymongo](https://pymongo.readthedocs.io/)
 
 ### 🐍 Python API
 
@@ -37,7 +42,6 @@ import preserve
 jam_db1 = preserve.open('shelf', filename="preserve.dbm")
 jam_db1['strawberry'] = {'name': 'Strawbery Jam', 'ingredients': ['strawberry', 'sugar']}
 
-
 # Using URI:
 jam_db2 = preserve.from_uri("mongodb://127.0.0.1:27017/preserves?collection=jam")
 jam_db2['currant'] = {'name': 'Currant Jam', 'ingredients': ['currant', 'sugar']}
@@ -45,7 +49,8 @@ jam_db2['currant'] = {'name': 'Currant Jam', 'ingredients': ['currant', 'sugar']
 ```
 
 ### 🖥️ Command Line Interface (CLI)
-Preserve has a simple CLI utility that can be access using the ```preserve``` command. Preserve support migrating/exporting data from one database ot another database and showing the firs rows from databases.
+
+Preserve has a simple CLI utility that can be access using the `` `preserve` `` command. Preserve support migrating/exporting data from one database ot another database and showing the firs rows from databases.
 
 ```
 Usage: preserve [OPTIONS] COMMAND [ARGS]...
