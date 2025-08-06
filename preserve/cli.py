@@ -10,7 +10,6 @@ app = typer.Typer()
 
 # TODO better implementation of multi
 # TODO support with statements in preserve.open
-# TODO documentation
 # TODO tests
 
 
@@ -90,7 +89,9 @@ def connectors(
 
 @app.command(help="Get header of a given database table.")
 def header(
-    uri: str = typer.Argument(..., help="The URI specifying how to access the preserve database."),
+    uri: str = typer.Argument(
+        ..., help="The URI specifying how to access the preserve database."
+    ),
     rows: int = typer.Option(10, "--nb", "-n", help="The number of rows to display."),
 ):
     pp = pprint.PrettyPrinter(width=41, compact=True)
@@ -103,7 +104,10 @@ def header(
     print(preserve_db)
     if preserve_db:
         with Halo(text="Fetching head.", spinner="dots") as sp:
-            values = [[idx, pp.pformat(preserve_db[idx])] for idx in list(preserve_db)[: min(len(preserve_db), rows)]]
+            values = [
+                [idx, pp.pformat(preserve_db[idx])]
+                for idx in list(preserve_db)[: min(len(preserve_db), rows)]
+            ]
             sp.succeed()
 
             typer.echo(
