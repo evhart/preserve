@@ -1,9 +1,89 @@
+import datetime
 import json
 import sqlite3
 from typing import Any, Dict, Generator, Iterator, Optional, Tuple, cast
 from urllib import parse
 
 from preserve.connector import Connector
+
+
+def _deserialize_datetime(obj):
+    """Converts an ISO formatted datetime string to a `datetime.datetime` object.
+
+    If the input `obj` is a string representing a datetime in ISO format,
+    returns the corresponding `datetime.datetime` object. If the conversion
+    fails or `obj` is not a string, returns `obj` unchanged.
+
+    Args:
+        obj (Any): The object to deserialize, typically a string or datetime.
+
+    Returns:
+        Any: A `datetime.datetime` object if deserialization is successful,
+                otherwise the original `obj`.
+    """
+    if isinstance(obj, str):
+        try:
+            return datetime.datetime.fromisoformat(obj)
+        except ValueError:
+            pass
+    return obj
+
+
+def _serialize_datetime(obj):
+    """Serializes a datetime.datetime object to an ISO 8601 formatted string.
+
+    Args:
+        obj: The object to serialize.
+
+    Returns:
+        str: The ISO 8601 formatted string representation of the datetime object.
+
+    Raises:
+        TypeError: If the provided object is not a datetime.datetime instance.
+    """
+    if isinstance(obj, datetime.datetime):
+        return obj.isoformat()
+    raise TypeError("Type not serializable")
+
+
+def _deserialize_json(json_str: str) -> Any:
+    """Deserialize a JSON string into a Python object, converting any datetime strings to datetime objects.
+
+    Args:
+        json_str (str): The JSON string to deserialize.
+
+    Returns:
+        Any: The deserialized Python object, with datetime strings converted.
+
+    Raises:
+        ValueError: If the input string is not valid JSON.
+    """
+    try:
+        return json.loads(json_str, object_hook=_deserialize_datetime)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON: {e}") from e
+
+
+def _serialize_json(obj: Any) -> str:
+    """Serialize a Python object into a JSON string.
+
+    This function attempts to serialize the given object to a JSON-formatted string,
+    using a custom serializer for datetime objects. If the object contains types that
+    cannot be serialized to JSON, a ValueError is raised.
+
+    Args:
+        obj (Any): The Python object to serialize.
+
+    Returns:
+        str: The JSON string representation of the object.
+
+    Raises:
+        ValueError: If the object contains non-serializable types.
+    """
+    try:
+        return json.dumps(obj, default=_serialize_datetime)
+    except TypeError as e:
+        raise ValueError(f"Object not serializable: {e}") from e
 
 
 class SQLite(Connector):
@@ -181,7 +261,7 @@ class SQLite(Connector):
         cursor = self._sqlite.cursor()
         cursor.execute("SELECT _content FROM preserve WHERE _id = ?", (str(key),))
         row = cursor.fetchone()
-        return json.loads(row[0]) if row else default
+        return _deserialize_json(row[0]) if row else default
 
     def __getitem__(self, key: Any) -> Optional[Dict[str, Any]]:
         """Retrieve an item from the SQLite database by key.
@@ -211,7 +291,7 @@ class SQLite(Connector):
         using the provided key as the '_id'. If an entry with the same key exists, it is replaced.
         """
         cursor = self._sqlite.cursor()
-        value_json = json.dumps(value)
+        value_json = _serialize_json(value)
 
         cursor.execute(
             "INSERT OR REPLACE INTO preserve (_id, _content) VALUES (?, ?)",
