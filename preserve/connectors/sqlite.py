@@ -209,7 +209,7 @@ class SQLite(Connector):
         cursor = self._sqlite.cursor()
         cursor.execute("SELECT _id, _content FROM preserve")
         for row in cursor.fetchall():
-            yield (row[0], row[1])
+            yield (row[0], _deserialize_json(row[1]))
 
     def iteritems(self) -> Iterator[Tuple[Any, Dict[str, Any]]]:
         """Iterates over the items in the SQLite database.
@@ -220,7 +220,7 @@ class SQLite(Connector):
         cursor = self._sqlite.cursor()
         cursor.execute("SELECT _id, _content FROM preserve")
         for row in cursor.fetchall():
-            yield (row[0], row[1])
+            yield (row[0], _deserialize_json(row[1]))
 
     def __len__(self) -> int:
         """Returns the number of items in the SQLite database.
