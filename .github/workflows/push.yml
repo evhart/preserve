@@ -45,6 +45,15 @@ jobs:
         uses: python-semantic-release/python-semantic-release@v10
         with:
           github_token: '${{ secrets.GITHUB_TOKEN }}'
+      - name: Publish release distributions to GitHub Releases
+        uses: python-semantic-release/publish-action@v10
+        if: steps.create-release.outputs.released == 'true'
+        with:
+          github_token: '${{ secrets.GITHUB_TOKEN }}'
+          tag: '${{ steps.create-release.outputs.tag }}'
+      - name: Publish to PyPI
+        if: steps.create-release.outputs.released == 'true'
+        run: uv publish dist/* --token ${{ secrets.PYPI_TOKEN }}
     outputs:
       released: '${{ steps.create-release.outputs.released }}'
       tag: '${{ steps.create-release.outputs.tag }}'
