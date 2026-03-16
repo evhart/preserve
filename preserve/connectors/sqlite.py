@@ -1,97 +1,28 @@
-import datetime
-import json
+from __future__ import annotations
+
+import collections.abc
+import re
 import sqlite3
-from typing import Any, Dict, Generator, Iterator, Optional, Tuple, cast
+from typing import Any, cast
 from urllib import parse
 
-from preserve.connector import Connector
+from pydantic import field_validator
 
+from preserve.connector import Connector, MultiConnector
 
-def _deserialize_datetime(obj):
-    """Converts an ISO formatted datetime string to a `datetime.datetime` object.
-
-    If the input `obj` is a string representing a datetime in ISO format,
-    returns the corresponding `datetime.datetime` object. If the conversion
-    fails or `obj` is not a string, returns `obj` unchanged.
-
-    Args:
-        obj (Any): The object to deserialize, typically a string or datetime.
-
-    Returns:
-        Any: A `datetime.datetime` object if deserialization is successful,
-                otherwise the original `obj`.
-    """
-    if isinstance(obj, str):
-        try:
-            return datetime.datetime.fromisoformat(obj)
-        except ValueError:
-            pass
-    return obj
-
-
-def _serialize_datetime(obj):
-    """Serializes a datetime.datetime object to an ISO 8601 formatted string.
-
-    Args:
-        obj: The object to serialize.
-
-    Returns:
-        str: The ISO 8601 formatted string representation of the datetime object.
-
-    Raises:
-        TypeError: If the provided object is not a datetime.datetime instance.
-    """
-    if isinstance(obj, datetime.datetime):
-        return obj.isoformat()
-    raise TypeError("Type not serializable")
-
-
-def _deserialize_json(json_str: str) -> Any:
-    """Deserialize a JSON string into a Python object, converting any datetime strings to datetime objects.
-
-    Args:
-        json_str (str): The JSON string to deserialize.
-
-    Returns:
-        Any: The deserialized Python object, with datetime strings converted.
-
-    Raises:
-        ValueError: If the input string is not valid JSON.
-    """
-    try:
-        return json.loads(json_str, object_hook=_deserialize_datetime)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON: {e}") from e
-
-
-def _serialize_json(obj: Any) -> str:
-    """Serialize a Python object into a JSON string.
-
-    This function attempts to serialize the given object to a JSON-formatted string,
-    using a custom serializer for datetime objects. If the object contains types that
-    cannot be serialized to JSON, a ValueError is raised.
-
-    Args:
-        obj (Any): The Python object to serialize.
-
-    Returns:
-        str: The JSON string representation of the object.
-
-    Raises:
-        ValueError: If the object contains non-serializable types.
-    """
-    try:
-        return json.dumps(obj, default=_serialize_datetime)
-    except TypeError as e:
-        raise ValueError(f"Object not serializable: {e}") from e
+_VALID_COLLECTION_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class SQLite(Connector):
     """SQLite connector for managing a simple key-value store using an SQLite database.
 
+    Values are serialized to JSON using :meth:`Connector._serialize_value` (pydantic-core),
+    which handles datetimes, UUIDs, Decimals, bytes, Enums, dataclasses, and
+    ``BaseModel`` instances with full round-trip fidelity for the latter.
+
     Attributes:
         filename (str): The path to the SQLite database file.
-        protocol (Optional[str]): The protocol used for the connection (default: None).
+        protocol (str | None): The protocol used for the connection (default: None).
 
     Class Methods:
         scheme() -> str:
@@ -104,28 +35,20 @@ class SQLite(Connector):
             Initializes the SQLite connector and ensures the required table exists.
         __iter__() -> Generator[tuple[str, Any], None, None]:
             Iterates over all key-value pairs in the database.
-        iteritems() -> Iterator[Tuple[Any, Dict[str, Any]]]:
+        iteritems() -> collections.abc.Iterator[tuple[Any, Any]]:
             Iterates over all key-value pairs in the database.
         __len__() -> int:
             Returns the number of items in the database.
         __contains__(key: Any) -> bool:
             Checks if a key exists in the database.
-        get(key: Any, default: Optional[Any] = None) -> Optional[Dict[str, Any]]:
-            Retrieves an item by key, returning default if not found.
-        __getitem__(key: Any) -> Optional[Dict[str, Any]]:
+        __getitem__(key: Any) -> Any:
             Retrieves an item by key, raising KeyError if not found.
-        __setitem__(key: Any, value: Dict[str, Any]) -> None:
+        __setitem__(key: Any, value: Any) -> None:
             Inserts or updates an item in the database.
         __delitem__(key: Any) -> None:
             Deletes an item by key from the database.
-        __enter__() -> "SQLite":
-            Enters the runtime context for the connector.
-        __exit__(type: Any, value: Any, traceback: Any) -> None:
-            Exits the runtime context and closes the connection.
         close() -> None:
             Closes the SQLite connection.
-        __del__() -> None:
-            Destructor to ensure the connection is closed.
         sync() -> None:
             Synchronizes the database (no-op for SQLite).
 
@@ -135,9 +58,35 @@ class SQLite(Connector):
     """
 
     filename: str
-    protocol: Optional[str] = None
+    collection: str = "preserve"
+    protocol: str | None = None
 
     __slots__ = ["_sqlite"]
+
+    @field_validator("collection")
+    @classmethod
+    def _validate_collection(cls, v: str) -> str:
+        """Ensure the collection name is a valid SQL identifier.
+
+        Only letters, digits, and underscores are allowed; the name must start
+        with a letter or underscore.  This prevents SQL injection via the table
+        name, which cannot be supplied as a bind parameter.
+
+        Args:
+            v (str): The proposed collection name.
+
+        Returns:
+            str: The validated collection name.
+
+        Raises:
+            ValueError: If *v* is not a valid SQL identifier.
+        """
+        if not _VALID_COLLECTION_RE.match(v):
+            raise ValueError(
+                f"Invalid collection name {v!r}: must start with a letter or "
+                "underscore and contain only letters, digits, and underscores."
+            )
+        return v
 
     @staticmethod
     def scheme() -> str:
@@ -190,8 +139,8 @@ class SQLite(Connector):
         # Initialise the SQLite database if needed
         cursor = self._sqlite.cursor()
         cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS preserve (
+            f"""
+            CREATE TABLE IF NOT EXISTS "{self.collection}" (
                 _id TEXT PRIMARY KEY,
                 _content TEXT
             )
@@ -199,28 +148,28 @@ class SQLite(Connector):
         )
         self._sqlite.commit()
 
-    def __iter__(self) -> "Generator[tuple[str, Any], None, None]":
-        """Iterates over all records in the 'preserve' table, yielding each row.
+    def __iter__(self) -> collections.abc.Generator[tuple[str, Any], None, None]:
+        """Iterates over all records in the collection table, yielding each row.
 
         Yields:
             tuple[str, Any]: A tuple where the first element is the record's '_id' and
                 the second element is its '_content'.
         """
         cursor = self._sqlite.cursor()
-        cursor.execute("SELECT _id, _content FROM preserve")
+        cursor.execute(f'SELECT _id, _content FROM "{self.collection}"')
         for row in cursor.fetchall():
-            yield (row[0], _deserialize_json(row[1]))
+            yield (row[0], self._deserialize_value(row[1]))
 
-    def iteritems(self) -> Iterator[Tuple[Any, Dict[str, Any]]]:
+    def iteritems(self) -> collections.abc.Iterator[tuple[Any, Any]]:
         """Iterates over the items in the SQLite database.
 
         Yields:
-            Tuple[Any, Dict[str, Any]]: A tuple containing the item's unique identifier and its content as a dictionary.
+            tuple[Any, Any]: A tuple containing the item's unique identifier and its content.
         """
         cursor = self._sqlite.cursor()
-        cursor.execute("SELECT _id, _content FROM preserve")
+        cursor.execute(f'SELECT _id, _content FROM "{self.collection}"')
         for row in cursor.fetchall():
-            yield (row[0], _deserialize_json(row[1]))
+            yield (row[0], self._deserialize_value(row[1]))
 
     def __len__(self) -> int:
         """Returns the number of items in the SQLite database.
@@ -232,7 +181,7 @@ class SQLite(Connector):
             int: The number of items in the 'preserve' table.
         """
         cursor = self._sqlite.cursor()
-        cursor.execute("SELECT COUNT(*) FROM preserve")
+        cursor.execute(f'SELECT COUNT(*) FROM "{self.collection}"')
         return cursor.fetchone()[0]
 
     def __contains__(self, key: Any) -> bool:
@@ -245,56 +194,45 @@ class SQLite(Connector):
             bool: True if the key exists, False otherwise.
         """
         cursor = self._sqlite.cursor()
-        cursor.execute("SELECT COUNT(*) FROM preserve WHERE _id = ?", (str(key),))
+        cursor.execute(f'SELECT COUNT(*) FROM "{self.collection}" WHERE _id = ?', (str(key),))
         return cursor.fetchone()[0] > 0
 
-    def get(self, key: Any, default: Optional[Any] = None) -> Optional[Dict[str, Any]]:
-        """Retrieve an item from the SQLite database by its key.
-
-        Args:
-            key (Any): The key identifying the item to retrieve.
-            default (Optional[Any], optional): The value to return if the key is not found. Defaults to None.
-
-        Returns:
-            Optional[Dict[str, Any]]: The deserialized item if found, otherwise the default value.
-        """
-        cursor = self._sqlite.cursor()
-        cursor.execute("SELECT _content FROM preserve WHERE _id = ?", (str(key),))
-        row = cursor.fetchone()
-        return _deserialize_json(row[0]) if row else default
-
-    def __getitem__(self, key: Any) -> Optional[Dict[str, Any]]:
+    def __getitem__(self, key: Any) -> Any:
         """Retrieve an item from the SQLite database by key.
 
         Args:
             key (Any): The key used to look up the item in the database.
 
         Returns:
-            Optional[Dict[str, Any]]: The item associated with the given key, if found.
+            Any: The item associated with the given key.
 
         Raises:
             KeyError: If the key is not found in the SQLite database.
         """
-        item = self.get(key)
-        if item is None:
-            raise KeyError(f"Key {str(key)} not found in SQLite database.")
-        return item
+        cursor = self._sqlite.cursor()
+        cursor.execute(f'SELECT _content FROM "{self.collection}" WHERE _id = ?', (str(key),))
+        row = cursor.fetchone()
+        if row is None:
+            raise KeyError(key)
+        return self._deserialize_value(row[0])
 
-    def __setitem__(self, key: Any, value: Dict[str, Any]) -> None:
+    def __setitem__(self, key: Any, value: Any) -> None:
         """Inserts or updates an item in the SQLite database.
 
         Args:
             key (Any): The key identifying the item to insert or update.
-            value (Dict[str, Any]): The value to be stored, represented as a dictionary.
+            value (Any): The value to be stored.
 
-        This method serializes the value to JSON and stores it in the '_content' column of the 'preserve' table,
-        using the provided key as the '_id'. If an entry with the same key exists, it is replaced.
+        This method serializes the value to JSON via :meth:`Connector._serialize_value`
+        and stores it in the ``_content`` column of the ``preserve`` table,
+        using the provided key as the ``_id``. If an entry with the same key exists,
+        it is replaced.
         """
         cursor = self._sqlite.cursor()
-        value_json = _serialize_json(value)
+        value_json = self._serialize_value(value)
 
         cursor.execute(
-            "INSERT OR REPLACE INTO preserve (_id, _content) VALUES (?, ?)",
+            f'INSERT OR REPLACE INTO "{self.collection}" (_id, _content) VALUES (?, ?)',
             (key, value_json),
         )
         self._sqlite.commit()
@@ -309,32 +247,10 @@ class SQLite(Connector):
             KeyError: If the key does not exist in the database.
         """
         cursor = self._sqlite.cursor()
-        cursor.execute("DELETE FROM preserve WHERE _id = ?", (str(key),))
+        cursor.execute(f'DELETE FROM "{self.collection}" WHERE _id = ?', (str(key),))
         self._sqlite.commit()
-
-    def __enter__(self) -> "SQLite":
-        """Enter the runtime context for the SQLite connector.
-
-        Returns:
-            SQLite: The current instance of the SQLite connector.
-        """
-        return self
-
-    def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
-        """Exit the runtime context related to this object.
-
-        This method is called when exiting a 'with' statement block.
-        It ensures that the SQLite connection is properly closed, releasing any resources held by the connection.
-
-        Args:
-            type (Any): The exception type, if an exception was raised, otherwise None.
-            value (Any): The exception value, if an exception was raised, otherwise None.
-            traceback (Any): The traceback object, if an exception was raised, otherwise None.
-
-        Returns:
-            None
-        """
-        self._sqlite.close()
+        if cursor.rowcount == 0:
+            raise KeyError(key)
 
     def close(self) -> None:
         """Closes the underlying SQLite database connection.
@@ -344,13 +260,102 @@ class SQLite(Connector):
         """
         self._sqlite.close()
 
-    def __del__(self) -> None:
-        """Destructor method that ensures the SQLite connection is properly closed."""
-        self.close()
-
     def sync(self) -> None:
         """Synchronizes the SQLite database.
 
         For SQLite, this method is a no-op because all changes are written to disk immediately.
         """
         pass
+
+
+class MultiSQLite(MultiConnector):
+    """Multi-collection SQLite connector.
+
+    Each collection maps to a separate table in the same ``.db`` file.  Tables
+    are created on first access.
+
+    Attributes:
+        filename (str): Path to the SQLite database file.  Pass ``":memory:"``
+            for a transient in-process database.
+    """
+
+    filename: str
+
+    __slots__ = ["_collections", "_collection_overrides"]
+
+    @staticmethod
+    def scheme() -> str:
+        """Return ``"sqlite"`` — the scheme used in the multi-connector registry."""
+        return "sqlite"
+
+    @staticmethod
+    def from_uri(uri: str) -> "MultiSQLite":
+        """Create a :class:`MultiSQLite` from a ``sqlite://\u2026`` URI."""
+        p = parse.urlsplit(uri)
+        params: dict[str, Any] = {}
+        params["filename"] = f"{p.netloc}{p.path}" if p.path else p.netloc
+        params.update(dict(parse.parse_qsl(p.query)))
+        return cast("MultiSQLite", MultiSQLite.model_validate(params))
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._collections: dict[str, SQLite] = {}
+        self._collection_overrides: dict[str, dict[str, Any]] = {}
+
+    def _evict(self, collection: str) -> None:
+        self._collections.pop(collection, None)
+
+    def __getitem__(self, collection: str) -> "SQLite":
+        """Return (and cache) a :class:`SQLite` for *collection*.
+
+        The table is created the first time any key is written to the collection.
+
+        Args:
+            collection (str): Collection (table) name — must be a valid SQL
+                identifier (letters, digits, underscores; starts with letter or
+                underscore).
+
+        Returns:
+            SQLite: A connector scoped to the named table.
+        """
+        if collection not in self._collections:
+            overrides = self._collection_overrides.get(collection)
+            if overrides is not None:
+                kt, dkt, dvt = overrides["key_types"], overrides["default_key_type"], overrides["default_value_type"]
+            else:
+                kt, dkt, dvt = self.key_types, self.default_key_type, self.default_value_type
+            self._collections[collection] = SQLite(
+                filename=self.filename,
+                collection=collection,
+                key_types=kt,
+                default_key_type=dkt,
+                default_value_type=dvt,
+            )
+        return self._collections[collection]
+
+    def collections(self) -> list[str]:
+        """Return the names of all tables accessible from this multi-connector.
+
+        For in-memory databases (``filename=":memory:"``) each sub-connector
+        has its own independent database, so only collections opened in this
+        session are reported.  For file-based databases, all tables present in
+        the file are returned.
+
+        Returns:
+            list[str]: Table names in alphabetical order.
+        """
+        if self.filename == ":memory:":
+            return sorted(self._collections.keys())
+        conn = sqlite3.connect(self.filename)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            return [row[0] for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Close all open sub-connectors."""
+        for connector in self._collections.values():
+            connector.close()
+        self._collections.clear()

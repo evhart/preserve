@@ -1,8 +1,13 @@
 import pprint
 
-import typer
-from halo import Halo
-from tabulate import tabulate
+try:
+    import typer
+    from halo import Halo
+    from tabulate import tabulate
+except ImportError as _e:
+    raise ImportError(
+        "The preserve CLI requires optional dependencies. Install them with: pip install preserve[cli]"
+    ) from _e
 
 import preserve
 
@@ -33,7 +38,8 @@ def export(
         help="The URI specifying how to access the input preserve database.",
     ),
 ):
-    assert input != output
+    if input == output:
+        raise typer.BadParameter("Input and output URIs must be different.")
 
     with Halo(text=f"Opening input preserve: {input}.", spinner="dots") as sp:
         in_preserve_db = preserve.from_uri(input)
@@ -89,9 +95,7 @@ def connectors(
 
 @app.command(help="Get header of a given database table.")
 def header(
-    uri: str = typer.Argument(
-        ..., help="The URI specifying how to access the preserve database."
-    ),
+    uri: str = typer.Argument(..., help="The URI specifying how to access the preserve database."),
     rows: int = typer.Option(10, "--nb", "-n", help="The number of rows to display."),
 ):
     pp = pprint.PrettyPrinter(width=41, compact=True)
@@ -104,10 +108,7 @@ def header(
     print(preserve_db)
     if preserve_db:
         with Halo(text="Fetching head.", spinner="dots") as sp:
-            values = [
-                [idx, pp.pformat(preserve_db[idx])]
-                for idx in list(preserve_db)[: min(len(preserve_db), rows)]
-            ]
+            values = [[idx, pp.pformat(preserve_db[idx])] for idx in list(preserve_db)[: min(len(preserve_db), rows)]]
             sp.succeed()
 
             typer.echo(

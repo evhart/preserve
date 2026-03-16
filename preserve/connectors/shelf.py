@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+import collections.abc
+import os
 import shelve
-from typing import Any, Generator, Optional, cast
+from typing import Any, cast
 from urllib import parse
 
-from preserve.connector import Connector
+from preserve.connector import Connector, MultiConnector
 
 
 class Shelf(Connector):
@@ -36,9 +40,6 @@ class Shelf(Connector):
         __contains__(key: str) -> bool:
             Checks if a key exists in the shelf.
 
-        get(key: str, default: object = None) -> object:
-            Retrieves a value by key, returning default if not found.
-
         __getitem__(key: str) -> object:
             Retrieves a value by key.
 
@@ -48,43 +49,19 @@ class Shelf(Connector):
         __delitem__(key: str) -> None:
             Deletes a key-value pair.
 
-        __enter__() -> "Shelf":
-            Enters a context manager, returning self.
-
-        __exit__(type, value, traceback) -> None:
-            Exits the context manager and closes the shelf.
-
         close() -> None:
             Closes the shelf database.
-
-        __del__() -> None:
-            Ensures the shelf is closed on deletion.
 
         sync() -> None:
             Synchronizes the in-memory state with the persistent storage.
     """
 
     filename: str
-    protocol: Optional[str] = None
+    protocol: str | None = None
     writeback: bool = False
     keyencoding: str = "utf-8"
 
     __slots__ = ["_shelf"]
-
-    def __setattr__(self, attr: str, value: object) -> None:
-        """Set an attribute on the instance.
-
-        If the attribute name is defined in __slots__, set it directly using the base object's __setattr__.
-        Otherwise, delegate to the superclass's __setattr__ method.
-
-        Args:
-            attr (str): The name of the attribute to set.
-            value (object): The value to assign to the attribute.
-        """
-        if attr in self.__slots__:
-            object.__setattr__(self, attr, value)
-        else:
-            super().__setattr__(attr, value)
 
     @staticmethod
     def scheme() -> str:
@@ -140,7 +117,7 @@ class Shelf(Connector):
 
         return cast("Shelf", Shelf.model_validate(params))
 
-    def __iter__(self) -> "Generator[tuple[str, Any], None, None]":
+    def __iter__(self) -> collections.abc.Generator[tuple[str, Any], None, None]:
         """Iterates over the items in the shelf.
 
         Yields:
@@ -167,18 +144,6 @@ class Shelf(Connector):
             bool: True if the key exists in the shelf, False otherwise.
         """
         return self._shelf.__contains__(key)
-
-    def get(self, key: str, default: object = None) -> object:
-        """Retrieve the value associated with the given key from the shelf.
-
-        Args:
-            key (str): The key to look up in the shelf.
-            default (object, optional): The value to return if the key is not found. Defaults to None.
-
-        Returns:
-            object: The value associated with the key if it exists, otherwise the default value.
-        """
-        return self._shelf.get(key, default)
 
     def __getitem__(self, key: str) -> object:
         """Retrieve the value associated with the given key from the shelf.
@@ -217,29 +182,6 @@ class Shelf(Connector):
         """
         self._shelf.__delitem__(key)
 
-    def __enter__(self) -> "Shelf":
-        """Enter the runtime context related to this object.
-
-        Returns:
-            Shelf: The shelf instance itself, allowing usage with the 'with' statement.
-        """
-        return self
-
-    def __exit__(self, type, value, traceback) -> None:
-        """Handles cleanup actions when exiting the context manager.
-
-        Closes the underlying shelf storage to ensure all changes are saved and resources are released.
-
-        Args:
-            type (Optional[Type[BaseException]]): The exception type, if an exception was raised.
-            value (Optional[BaseException]): The exception instance, if an exception was raised.
-            traceback (Optional[TracebackType]): The traceback object, if an exception was raised.
-
-        Returns:
-            None
-        """
-        self._shelf.close()
-
     def close(self) -> None:
         """Closes the underlying shelf database.
 
@@ -248,10 +190,6 @@ class Shelf(Connector):
         """
         self._shelf.close()
 
-    def __del__(self) -> None:
-        """Destructor method that ensures the connector is properly closed when the object is garbage collected."""
-        self.close()
-
     def sync(self) -> None:
         """Synchronize the in-memory state of the shelf with the persistent storage.
 
@@ -259,3 +197,95 @@ class Shelf(Connector):
         keeping the persistent storage up to date with the current state.
         """
         self._shelf.sync()
+
+
+class MultiShelf(MultiConnector):
+    """Multi-collection shelf connector backed by a directory.
+
+    Each collection maps to a separate shelf file inside *directory*.  The
+    directory is created automatically on initialisation if it does not exist.
+
+    Attributes:
+        directory (str): Path to the directory containing the shelf files.
+        protocol (str | None): Pickle protocol version to use (forwarded to
+            :class:`Shelf`).
+        writeback (bool): Whether to enable write-back caching (default:
+            ``False``).
+        keyencoding (str): Encoding used for keys (default: ``"utf-8"``).
+    """
+
+    directory: str
+    protocol: str | None = None
+    writeback: bool = False
+    keyencoding: str = "utf-8"
+
+    __slots__ = ["_shelves", "_collection_overrides"]
+
+    @staticmethod
+    def scheme() -> str:
+        """Return ``"shelf"``."""
+        return "shelf"
+
+    @staticmethod
+    def from_uri(uri: str) -> "MultiShelf":
+        """Create a :class:`MultiShelf` from a ``shelf://\u2026`` URI.
+
+        The path component is used as the *directory*.
+        """
+        p = parse.urlsplit(uri)
+        params: dict[str, Any] = {}
+        params["directory"] = f"{p.netloc}{p.path}" if p.path else p.netloc
+        params.update(dict(parse.parse_qsl(p.query)))
+        return cast("MultiShelf", MultiShelf.model_validate(params))
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        os.makedirs(self.directory, exist_ok=True)
+        self._shelves: dict[str, Shelf] = {}
+        self._collection_overrides: dict[str, dict[str, Any]] = {}
+
+    def _evict(self, collection: str) -> None:
+        self._shelves.pop(collection, None)
+
+    def __getitem__(self, collection: str) -> "Shelf":
+        """Return (and cache) a :class:`Shelf` for *collection*.
+
+        The shelf file is stored at ``{directory}/{collection}``.
+
+        Args:
+            collection (str): An arbitrary collection identifier used as the
+                filename within the directory.
+
+        Returns:
+            Shelf: A connector scoped to the named shelf file.
+        """
+        if collection not in self._shelves:
+            overrides = self._collection_overrides.get(collection)
+            if overrides is not None:
+                kt, dkt, dvt = overrides["key_types"], overrides["default_key_type"], overrides["default_value_type"]
+            else:
+                kt, dkt, dvt = self.key_types, self.default_key_type, self.default_value_type
+            self._shelves[collection] = Shelf(
+                filename=os.path.join(self.directory, collection),
+                protocol=self.protocol,
+                writeback=self.writeback,
+                keyencoding=self.keyencoding,
+                key_types=kt,
+                default_key_type=dkt,
+                default_value_type=dvt,
+            )
+        return self._shelves[collection]
+
+    def collections(self) -> list[str]:
+        """Return the names of all collections that have been opened.
+
+        Returns:
+            list[str]: Collection names in insertion order.
+        """
+        return list(self._shelves.keys())
+
+    def close(self) -> None:
+        """Sync and close all open shelf files."""
+        for shelf in self._shelves.values():
+            shelf.close()
+        self._shelves.clear()

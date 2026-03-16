@@ -1,7 +1,10 @@
-from typing import Any, Generator, Optional, cast
+from __future__ import annotations
+
+import collections.abc
+from typing import Any, cast
 from urllib import parse
 
-from preserve.connector import Connector
+from preserve.connector import Connector, MultiConnector
 
 
 class Memory(Connector):
@@ -27,29 +30,21 @@ class Memory(Connector):
             Returns the number of items in the store.
         __contains__(key):
             Checks if a key exists in the store.
-        get(key, default=None):
-            Retrieves the value for a key, or returns default if not found.
         __getitem__(key):
             Retrieves the value for a key.
         __setitem__(key, value):
             Sets the value for a key.
         __delitem__(key):
             Deletes a key from the store.
-        __enter__():
-            Enters a context manager.
-        __exit__(type, value, traceback):
-            Exits a context manager and closes the store.
         close():
             Closes the store and releases resources.
-        __del__():
-            Ensures the store is closed upon deletion.
         sync():
             Placeholder for syncing data (no-op for memory backend).
     """
 
     keyencoding: str = "utf-8"
 
-    __slots__ = "_dict"
+    __slots__ = ["_dict"]
 
     @staticmethod
     def scheme() -> str:
@@ -85,9 +80,9 @@ class Memory(Connector):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initializes the object, calling the parent constructor with any provided arguments."""
         super().__init__(*args, **kwargs)
-        self._dict: Optional[dict[bytes, Any]] = {}
+        self._dict: dict[bytes, Any] | None = {}
 
-    def __iter__(self) -> Generator[tuple[str, Any], None, None]:
+    def __iter__(self) -> collections.abc.Generator[tuple[str, Any], None, None]:
         """Iterates over the items in the internal dictionary, yielding (key, value) tuples with decoded keys.
 
         Yields:
@@ -122,20 +117,6 @@ class Memory(Connector):
         """
         return self._dict is not None and key.encode(self.keyencoding) in self._dict
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """Retrieve the value associated with the given key from the internal dictionary.
-
-        Args:
-            key: The key to look up in the dictionary.
-            default: The value to return if the key is not found. Defaults to None.
-
-        Returns:
-            The value associated with the key if it exists, otherwise the default value.
-        """
-        if self._dict is not None and key.encode(self.keyencoding) in self._dict:
-            return self._dict[key.encode(self.keyencoding)]
-        return default
-
     def __getitem__(self, key: str) -> Any:
         """Retrieve the value associated with the given key using dictionary-style access.
 
@@ -148,7 +129,9 @@ class Memory(Connector):
         Raises:
             KeyError: If the key is not found.
         """
-        return self.get(key)
+        if self._dict is not None and key.encode(self.keyencoding) in self._dict:
+            return self._dict[key.encode(self.keyencoding)]
+        raise KeyError(key)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Sets the value associated with the given key in the memory store.
@@ -172,43 +155,13 @@ class Memory(Connector):
             key (str): The key of the item to remove.
 
         Raises:
+            KeyError: If the key does not exist in the store.
             RuntimeError: If the memory store is closed.
-
-        Notes:
-            If the key does not exist in the store, the method silently ignores the KeyError.
         """
         if self._dict is not None:
-            try:
-                del self._dict[key.encode(self.keyencoding)]
-            except KeyError:
-                pass
+            del self._dict[key.encode(self.keyencoding)]
         else:
             raise RuntimeError("Memory store is closed.")
-
-    def __enter__(self) -> "Memory":
-        """Enter the runtime context related to this object.
-
-        Returns:
-            self: Returns the instance itself to be used as the context manager.
-        """
-        return self
-
-    def __exit__(
-        self,
-        type: Optional[type[BaseException]],
-        value: Optional[BaseException],
-        traceback: Optional[Any],
-    ) -> None:
-        """Handles cleanup actions when exiting a context.
-
-        Ensures that resources are properly released by calling the `close` method.
-
-        Args:
-            type (Type[BaseException] or None): The exception type, if an exception was raised, otherwise None.
-            value (BaseException or None): The exception instance, if an exception was raised, otherwise None.
-            traceback (TracebackType or None): The traceback object, if an exception was raised, otherwise None.
-        """
-        self.close()
 
     def close(self) -> None:
         """Closes the memory connector by syncing any pending changes and releasing resources.
@@ -227,10 +180,70 @@ class Memory(Connector):
             except Exception:
                 pass
 
-    def __del__(self) -> None:
-        """Destructor method that ensures resources are properly released by calling the close() method."""
-        self.close()
-
     def sync(self) -> None:
         """Synchronizes the in-memory data with the persistent storage or external source."""
         pass
+
+
+class MultiMemory(MultiConnector):
+    """Multi-collection in-memory connector.
+
+    Each collection is an isolated :class:`Memory` store.  All data is lost
+    when :meth:`close` is called or the object is garbage-collected.
+    """
+
+    __slots__ = ["_collections", "_collection_overrides"]
+
+    @staticmethod
+    def scheme() -> str:
+        """Return ``"memory"``."""
+        return "memory"
+
+    @staticmethod
+    def from_uri(uri: str) -> "MultiMemory":
+        """Create a :class:`MultiMemory` from a ``memory://\u2026`` URI (parameters ignored)."""
+        return MultiMemory()
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._collections: dict[str, Memory] = {}
+        self._collection_overrides: dict[str, dict[str, Any]] = {}
+
+    def _evict(self, collection: str) -> None:
+        self._collections.pop(collection, None)
+
+    def __getitem__(self, collection: str) -> "Memory":
+        """Return (and cache) a :class:`Memory` for *collection*.
+
+        Args:
+            collection (str): An arbitrary collection identifier.
+
+        Returns:
+            Memory: A connector scoped to the named in-memory store.
+        """
+        if collection not in self._collections:
+            overrides = self._collection_overrides.get(collection)
+            if overrides is not None:
+                kt, dkt, dvt = overrides["key_types"], overrides["default_key_type"], overrides["default_value_type"]
+            else:
+                kt, dkt, dvt = self.key_types, self.default_key_type, self.default_value_type
+            self._collections[collection] = Memory(
+                key_types=kt,
+                default_key_type=dkt,
+                default_value_type=dvt,
+            )
+        return self._collections[collection]
+
+    def collections(self) -> list[str]:
+        """Return the names of all collections that have been opened.
+
+        Returns:
+            list[str]: Collection names in insertion order.
+        """
+        return list(self._collections.keys())
+
+    def close(self) -> None:
+        """Close (and clear) all open sub-connectors."""
+        for connector in self._collections.values():
+            connector.close()
+        self._collections.clear()
