@@ -1,5 +1,10 @@
 # 🥫 Preserve — A simple Python key/value store with multiple backends
 
+[![CI](https://github.com/evhart/preserve/actions/workflows/push.yml/badge.svg)](https://github.com/evhart/preserve/actions/workflows/push.yml)
+[![PyPI](https://img.shields.io/pypi/v/preserve)](https://pypi.org/project/preserve/)
+[![Python](https://img.shields.io/pypi/pyversions/preserve)](https://pypi.org/project/preserve/)
+[![License](https://img.shields.io/pypi/l/preserve)](https://github.com/evhart/preserve/blob/master/LICENSE)
+
 Preserve is a simple, dict-like key/value store for Python 3.9+ that supports multiple storage backends (SQLite, in-memory, shelf, MongoDB) with a unified API. It also provides a response-caching decorator and context manager for memoising expensive function calls.
 
 ## Contents
