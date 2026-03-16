@@ -1,6 +1,6 @@
 [project]
 name = "preserve"
-version = "2.0.0"
+version = "2.0.1"
 description = "A simple key/value store with multiple backends."
 readme = "README.md"
 license = { text = "MIT" }

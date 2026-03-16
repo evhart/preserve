@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.0.1 (2026-03-16)
+
+### Bug Fixes
+
+- Trigger release to publish dist artifacts and PyPI upload
+  ([`f16ce25`](https://github.com/evhart/preserve/commit/f16ce25ca2d6a99f83cfacfb342a344f6fcc58f0))
+
+### Continuous Integration
+
+- Publish dist to GitHub Releases and PyPI after release
+  ([`c907b6e`](https://github.com/evhart/preserve/commit/c907b6e25177311a835b66e632d08db4ecf79326))
+
+### Documentation
+
+- Add badges, remove alpha disclaimer, drop unused mypy.ini
+  ([`e481314`](https://github.com/evhart/preserve/commit/e48131422394965725390f3c67dc2cfd495e11a8))
+
+
 ## v2.0.0 (2026-03-16)
 
 ### Bug Fixes
