@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import logging
+import sys
 
 from preserve.connector import Connector, MultiConnector
 
@@ -30,7 +31,11 @@ def _discover() -> None:
         return
     _DISCOVERED = True
 
-    for ep in importlib.metadata.entry_points(group="preserve.connectors"):
+    for ep in (
+        importlib.metadata.entry_points(group="preserve.connectors")
+        if sys.version_info >= (3, 10)
+        else importlib.metadata.entry_points().get("preserve.connectors", [])
+    ):
         try:
             connector_cls = ep.load()
         except Exception:
@@ -69,7 +74,11 @@ def _discover_multi() -> None:
         return
     _MULTI_DISCOVERED = True
 
-    for ep in importlib.metadata.entry_points(group="preserve.multi_connectors"):
+    for ep in (
+        importlib.metadata.entry_points(group="preserve.multi_connectors")
+        if sys.version_info >= (3, 10)
+        else importlib.metadata.entry_points().get("preserve.multi_connectors", [])
+    ):
         try:
             connector_cls = ep.load()
         except Exception:
